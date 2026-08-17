@@ -1,0 +1,71 @@
+name: Build plugin
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read plugin version
+        id: meta
+        run: |
+          version=$(python3 - <<'PY'
+          import re, pathlib
+          src = pathlib.Path('__init__.py').read_text()
+          nums = re.search(r'version\s*=\s*\(([^)]*)\)', src).group(1)
+          print('.'.join(p.strip() for p in nums.split(',')))
+          PY
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Plugin version: $version"
+
+      - name: Check the tag matches the plugin version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "${{ steps.meta.outputs.version }}" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version ${{ steps.meta.outputs.version }} in __init__.py" >&2
+            exit 1
+          fi
+
+      - name: Check Python syntax
+        run: python3 -m compileall -q __init__.py config.py action.py
+
+      - name: Build
+        run: sh build.sh
+
+      - name: List the contents of the ZIP
+        run: unzip -l send_to_kindle.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: send_to_kindle-${{ steps.meta.outputs.version }}
+          path: send_to_kindle.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: sh build.sh
+
+      - name: Attach the ZIP to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" send_to_kindle.zip --generate-notes
