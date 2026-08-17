@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="360" viewBox="0 0 1200 360"
+     role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">Send to Kindle — calibre plugin</title>
+  <desc id="hero-desc">A calibre plugin for Windows that sends selected books to the Amazon Send to Kindle application, converts PDFs to EPUB first, and records the outcome in library columns. Beside the title, a small library view shows three books with their send status: two marked Yes, one marked No because it has no supported format.</desc>
+
+  <rect width="1200" height="360" rx="26" fill="#14161A"/>
+  <rect x="0" y="0" width="1200" height="4" rx="2" fill="#F4A63A" opacity="0.55"/>
+
+  <g id="title-block">
+    <text x="64" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="17" letter-spacing="2" fill="#F4A63A">CALIBRE PLUGIN · WINDOWS</text>
+
+    <text x="64" y="162" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          font-size="58" font-weight="700" fill="#F4F6F8">Send to Kindle</text>
+
+    <text x="64" y="212" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          font-size="22" fill="#B7BFC8">Select books in calibre, send them to Amazon&#8217;s</text>
+    <text x="64" y="244" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          font-size="22" fill="#B7BFC8">Send to Kindle app, and record every result.</text>
+
+    <text x="64" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="18" fill="#7B8590">v1.1.0   ·   calibre 5.0+   ·   StkSendToHandler.exe</text>
+  </g>
+
+  <g id="library-proof">
+    <rect x="672" y="48" width="464" height="264" rx="18" fill="#1B1E23" stroke="#282D34" stroke-width="1"/>
+
+    <text x="700" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="16" letter-spacing="1.8" fill="#7B8590">LIBRARY</text>
+    <text x="1108" y="88" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="16" letter-spacing="1.4" fill="#7B8590">#stk_sent</text>
+    <line x1="700" y1="104" x2="1108" y2="104" stroke="#2C323A" stroke-width="1"/>
+
+    <g id="row-1" transform="translate(700 124)">
+      <rect x="0" y="4" width="5" height="34" rx="2.5" fill="#E8E1D3"/>
+      <text x="20" y="20" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            font-size="20" fill="#E6E9EC">The Left Hand of Darkness</text>
+      <text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" fill="#7B8590">EPUB</text>
+      <rect x="310" y="6" width="62" height="30" rx="15" fill="#1E3327" stroke="#39634A" stroke-width="1"/>
+      <text x="341" y="27" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" fill="#7FC98C">Yes</text>
+    </g>
+
+    <g id="row-2" transform="translate(700 186)">
+      <rect x="0" y="4" width="5" height="34" rx="2.5" fill="#E8E1D3"/>
+      <text x="20" y="20" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            font-size="20" fill="#E6E9EC">Structured Programming</text>
+      <text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" fill="#F4A63A">PDF &#8594; EPUB</text>
+      <rect x="310" y="6" width="62" height="30" rx="15" fill="#1E3327" stroke="#39634A" stroke-width="1"/>
+      <text x="341" y="27" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" fill="#7FC98C">Yes</text>
+    </g>
+
+    <g id="row-3" transform="translate(700 248)">
+      <rect x="0" y="4" width="5" height="34" rx="2.5" fill="#3A3F46"/>
+      <text x="20" y="20" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            font-size="20" fill="#9AA3AC">Scanned notes</text>
+      <text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" fill="#7B8590">no supported format</text>
+      <rect x="310" y="6" width="62" height="30" rx="15" fill="#33211F" stroke="#6B3B36" stroke-width="1"/>
+      <text x="341" y="27" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" fill="#E58B82">No</text>
+    </g>
+  </g>
+</svg>
