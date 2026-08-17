@@ -20,7 +20,7 @@
           font-size="22" fill="#B7BFC8">Send to Kindle app, and record every result.</text>
 
     <text x="64" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-          font-size="18" fill="#7B8590">v1.1.0   ·   calibre 5.0+   ·   StkSendToHandler.exe</text>
+          font-size="18" fill="#7B8590">calibre 5.0+   ·   StkSendToHandler.exe</text>
   </g>
 
   <g id="library-proof">

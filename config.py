@@ -32,10 +32,9 @@ prefs.defaults['exe_path'] = ''  # empty => autodetect
 prefs.defaults['format_priority'] = ['EPUB', 'MOBI', 'AZW3', 'PDF', 'DOCX', 'TXT']
 prefs.defaults['convert_pdf'] = True
 prefs.defaults['convert_timeout'] = 900  # seconds per conversion
-prefs.defaults['timeout'] = 120  # seconds per send
+prefs.defaults['timeout'] = 15  # seconds per send
 prefs.defaults['track_status'] = True
 prefs.defaults['sent_column'] = 'stk_sent'
-prefs.defaults['error_column'] = 'stk_error'
 
 
 def candidate_exe_paths():
@@ -119,7 +118,7 @@ class ConfigWidget(QWidget):
         track_box = QGroupBox(_('Status tracking'), self)
         track_layout = QFormLayout(track_box)
 
-        self.track_status_box = QCheckBox(_('Record the result of each send in custom columns'), self)
+        self.track_status_box = QCheckBox(_('Record the result of each send in a custom column'), self)
         self.track_status_box.setChecked(bool(prefs['track_status']))
         self.track_status_box.toggled.connect(self.update_track_status)
         track_layout.addRow(self.track_status_box)
@@ -128,12 +127,8 @@ class ConfigWidget(QWidget):
         self.sent_column_edit.setToolTip(_('Lookup name of a Yes/No column, without the leading #'))
         track_layout.addRow(_('&Sent column:'), self.sent_column_edit)
 
-        self.error_column_edit = QLineEdit(prefs['error_column'], self)
-        self.error_column_edit.setToolTip(_('Lookup name of a text column, without the leading #'))
-        track_layout.addRow(_('&Error column:'), self.error_column_edit)
-
         note = QLabel(_(
-            'The columns are created for you the first time you send a book. '
+            'The column is created for you the first time you send a book. '
             'A "Yes" means the file was handed to the Send to Kindle application '
             'without an error, not that Amazon has confirmed delivery.'), self)
         note.setWordWrap(True)
@@ -173,7 +168,6 @@ class ConfigWidget(QWidget):
 
     def update_track_status(self, checked):
         self.sent_column_edit.setEnabled(checked)
-        self.error_column_edit.setEnabled(checked)
 
     def validate(self):
         return True
@@ -191,6 +185,4 @@ class ConfigWidget(QWidget):
 
         prefs['track_status'] = self.track_status_box.isChecked()
         sent = self.sent_column_edit.text().strip().lstrip('#').lower()
-        error = self.error_column_edit.text().strip().lstrip('#').lower()
         prefs['sent_column'] = sent or prefs.defaults['sent_column']
-        prefs['error_column'] = error or prefs.defaults['error_column']

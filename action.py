@@ -71,7 +71,7 @@ class SendToKindleAction(InterfaceAction):
         if not items and not results:
             return
 
-        columns = self.ensure_columns()
+        sent_column = self.ensure_column()
         opts = {
             'timeout': int(prefs['timeout']),
             'convert_timeout': int(prefs['convert_timeout']),
@@ -82,7 +82,7 @@ class SendToKindleAction(InterfaceAction):
         # onto the GUI thread before it touches the database or shows a dialog
         job = ThreadedJob('send_to_kindle', desc, self.run_batch,
                           (exe, items, opts, results), {}, Dispatcher(self.batch_done))
-        job.stk_columns = columns
+        job.stk_column = sent_column
         self.gui.job_manager.run_threaded_job(job)
         self.gui.status_bar.show_message(desc, 3000)
 
@@ -163,46 +163,40 @@ class SendToKindleAction(InterfaceAction):
         os.makedirs(book_dir)
         return os.path.join(book_dir, name[:120] + '.epub')
 
-    def ensure_columns(self):
+    def ensure_column(self):
         '''
-        Return (sent_column, error_column) lookup names to write the result to, or
-        (None, None) when the result must not be recorded.
+        Return the lookup name of the column to write the result to, or None when the
+        result must not be recorded.
         '''
         if not prefs['track_status']:
-            return None, None
-        sent, error = '#' + prefs['sent_column'], '#' + prefs['error_column']
+            return None
+        sent = '#' + prefs['sent_column']
         db = self.gui.current_db
-        existing = set(db.new_api.field_metadata.custom_field_keys())
-        missing = [c for c in (sent, error) if c not in existing]
-        if not missing:
-            return sent, error
+        if sent in set(db.new_api.field_metadata.custom_field_keys()):
+            return sent
 
         if not question_dialog(
-                self.gui, _('Create tracking columns?'),
+                self.gui, _('Create the tracking column?'),
                 _('To keep track of what was sent to your Kindle, this plugin needs the '
-                  'custom columns {0} (Yes/No) and {1} (text) in this library.'
-                  '\n\nCreate them now?').format(sent, error)):
-            return None, None
+                  'custom column {0} (Yes/No) in this library.'
+                  '\n\nCreate it now?').format(sent)):
+            return None
         try:
-            if sent in missing:
-                db.new_api.create_custom_column(
-                    prefs['sent_column'], _('Sent to Kindle'), 'bool', False)
-            if error in missing:
-                db.new_api.create_custom_column(
-                    prefs['error_column'], _('Send to Kindle error'), 'text', False)
+            db.new_api.create_custom_column(
+                prefs['sent_column'], _('Sent to Kindle'), 'bool', False)
         except Exception as err:
             traceback.print_exc()
-            error_dialog(self.gui, _('Could not create the columns'),
-                         _('The tracking columns could not be created: {}').format(err),
+            error_dialog(self.gui, _('Could not create the column'),
+                         _('The tracking column could not be created: {}').format(err),
                          det_msg=traceback.format_exc(), show=True)
-            return None, None
+            return None
 
         info_dialog(
             self.gui, _('Restart calibre'),
-            _('The columns {0} and {1} were created. Restart calibre for them to appear. '
+            _('The column {0} was created. Restart calibre for it to appear. '
               'The books you are sending now will be sent, but their result will only be '
-              'recorded after the restart.').format(sent, error), show=True)
-        return None, None
+              'recorded after the restart.').format(sent), show=True)
+        return None
 
     # --- worker (background thread) -----------------------------------------
     def run_batch(self, exe, items, opts, results, abort=None, log=None, notifications=None):
@@ -290,16 +284,15 @@ class SendToKindleAction(InterfaceAction):
                 traceback.print_exc()
                 job.log.error('Failed to add the converted EPUB for', r['title'])
 
-        sent_column, error_column = getattr(job, 'stk_columns', (None, None))
-        if sent_column and error_column:
+        sent_column = getattr(job, 'stk_column', None)
+        if sent_column:
             try:
                 new_api.set_field(sent_column, {r['book_id']: bool(r['ok']) for r in results})
-                new_api.set_field(error_column, {r['book_id']: r['error'] or '' for r in results})
             except Exception:
                 traceback.print_exc()
                 error_dialog(self.gui, _('Could not record the result'),
                              _('The books were processed but the result could not be written '
-                               'to the tracking columns.'),
+                               'to the tracking column.'),
                              det_msg=traceback.format_exc(), show=True)
 
         book_ids = [r['book_id'] for r in results]
