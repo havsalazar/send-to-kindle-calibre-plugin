@@ -1,0 +1,62 @@
+name: Release plugin
+
+# Runs on every push to main, but only publishes when the version in
+# __init__.py has been bumped to something that has no release yet.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read plugin version
+        id: meta
+        run: |
+          version=$(python3 - <<'PY'
+          import re, pathlib
+          src = pathlib.Path('__init__.py').read_text()
+          nums = re.search(r'version\s*=\s*\(([^)]*)\)', src).group(1)
+          print('.'.join(p.strip() for p in nums.split(',')))
+          PY
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Plugin version: $version"
+
+      - name: Has this version been released?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ steps.meta.outputs.tag }}'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "$tag is already released, nothing to do."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "$tag has no release yet, publishing it."
+          fi
+
+      - name: Check Python syntax
+        if: steps.check.outputs.needed == 'true'
+        run: python3 -m compileall -q __init__.py config.py action.py
+
+      - name: Build
+        if: steps.check.outputs.needed == 'true'
+        run: sh build.sh
+
+      - name: Tag and publish
+        if: steps.check.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ steps.meta.outputs.tag }}' send_to_kindle.zip \
+            --target "$GITHUB_SHA" \
+            --title '${{ steps.meta.outputs.tag }}' \
+            --generate-notes
