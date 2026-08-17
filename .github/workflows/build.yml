@@ -3,7 +3,6 @@ name: Build plugin
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -29,15 +28,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Plugin version: $version"
 
-      - name: Check the tag matches the plugin version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "$tag" != "${{ steps.meta.outputs.version }}" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version ${{ steps.meta.outputs.version }} in __init__.py" >&2
-            exit 1
-          fi
-
       - name: Check Python syntax
         run: python3 -m compileall -q __init__.py config.py action.py
 
@@ -52,20 +42,3 @@ jobs:
           name: send_to_kindle-${{ steps.meta.outputs.version }}
           path: send_to_kindle.zip
           if-no-files-found: error
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build
-        run: sh build.sh
-
-      - name: Attach the ZIP to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" send_to_kindle.zip --generate-notes
