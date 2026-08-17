@@ -5,7 +5,7 @@ class SendToKindlePlugin(InterfaceActionBase):
     description         = 'Send the selected books to Kindle via StkSendToHandler.exe'
     supported_platforms = ['windows']
     author              = 'havsalazar'
-    version             = (1, 1, 0)
+    version             = (1, 1, 1)
     minimum_calibre_version = (5, 0, 0)
 
     actual_plugin = 'calibre_plugins.send_to_kindle.action:SendToKindleAction'
