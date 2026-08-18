@@ -1,26 +1,22 @@
 import os
-import subprocess
 import traceback
+import urllib.error
+from pathlib import Path
 
 from qt.core import QMenu
 
-from calibre import prepare_string_for_xml
 from calibre.gui2 import Dispatcher, error_dialog, info_dialog, question_dialog
 from calibre.gui2.actions import InterfaceAction
 from calibre.gui2.threaded_jobs import ThreadedJob
 from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.utils.filenames import ascii_filename
 
-from calibre_plugins.send_to_kindle.config import (
-    DOWNLOAD_URL,
-    candidate_exe_paths,
-    prefs,
-    resolve_exe,
-)
+from calibre_plugins.send_to_kindle import auth, stkclient
+from calibre_plugins.send_to_kindle.config import SUPPORTED_FORMATS, prefs
 
 
 def decode_output(raw):
-    'Turn the tail of a subprocess output stream into a short one line message'
+    'Turn the tail of a conversion worker traceback into a short one line message'
     if not raw:
         return ''
     if isinstance(raw, bytes):
@@ -39,7 +35,7 @@ class SendToKindleAction(InterfaceAction):
         self.qaction.setMenu(self.menu)
         self.create_menu_action(
             self.menu, 'send_to_kindle_send', _('Send selected books to Kindle'),
-            description=_('Send the selected books to the Send to Kindle application'),
+            description=_('Send the selected books to your Kindle devices'),
             triggered=self.send_to_kindle)
         self.menu.addSeparator()
         self.create_menu_action(
@@ -56,9 +52,14 @@ class SendToKindleAction(InterfaceAction):
 
     # --- entry point --------------------------------------------------------
     def send_to_kindle(self):
-        exe = resolve_exe()
-        if not exe or not os.path.isfile(exe):
-            return self.report_missing_exe(exe)
+        client = auth.load_client()
+        if client is None:
+            return self.report_not_configured(
+                _('You are not signed in to Amazon, so nothing was sent.'))
+        serials = list(prefs['device_serials'])
+        if not serials:
+            return self.report_not_configured(
+                _('No Kindle device is selected, so nothing was sent.'))
 
         rows = self.gui.library_view.selectionModel().selectedRows()
         if not rows:
@@ -73,7 +74,7 @@ class SendToKindleAction(InterfaceAction):
 
         sent_column = self.ensure_column()
         opts = {
-            'timeout': int(prefs['timeout']),
+            'send_timeout': int(prefs['send_timeout']),
             'convert_timeout': int(prefs['convert_timeout']),
         }
         desc = ngettext('Send one book to Kindle',
@@ -81,7 +82,7 @@ class SendToKindleAction(InterfaceAction):
         # The callback is run by the worker thread, so it has to be dispatched
         # onto the GUI thread before it touches the database or shows a dialog
         job = ThreadedJob('send_to_kindle', desc, self.run_batch,
-                          (exe, items, opts, results), {}, Dispatcher(self.batch_done))
+                          (client, serials, items, opts, results), {}, Dispatcher(self.batch_done))
         job.stk_column = sent_column
         self.gui.job_manager.run_threaded_job(job)
         self.gui.status_bar.show_message(desc, 3000)
@@ -91,7 +92,7 @@ class SendToKindleAction(InterfaceAction):
         '''
         Work out what file to send for each book. Returns (items, results) where
         items still have to be processed by the job and results are the books that
-        already failed (no format, missing file).
+        already failed (no format, unsupported format, missing file).
         '''
         db = self.gui.current_db
         new_api = db.new_api
@@ -102,9 +103,19 @@ class SendToKindleAction(InterfaceAction):
         tdir = None
         for book_id in book_ids:
             title = new_api.field_for('title', book_id) or _('Unknown')
-            fmts = [f.upper() for f in (new_api.formats(book_id) or ())]
-            if not fmts:
+            authors = new_api.field_for('authors', book_id) or ()
+            author = ' & '.join(authors) or _('Unknown')
+            all_fmts = [f.upper() for f in (new_api.formats(book_id) or ())]
+            if not all_fmts:
                 results.append(self.result(book_id, title, False, _('The book has no formats')))
+                continue
+            fmts = [f for f in all_fmts if f in SUPPORTED_FORMATS]
+            if not fmts:
+                # Amazon rejects MOBI and AZW3 outright, so say so instead of uploading in vain
+                results.append(self.result(
+                    book_id, title, False,
+                    _('Amazon does not accept {0}. Convert the book to EPUB first.').format(
+                        ', '.join(all_fmts))))
                 continue
             fmt = next((f for f in fmt_priority if f in fmts), fmts[0])
             if fmt == 'PDF' and convert_pdf and 'EPUB' in fmts:
@@ -117,14 +128,14 @@ class SendToKindleAction(InterfaceAction):
                     _('The {} file is missing from the library').format(fmt)))
                 continue
 
-            item = {'book_id': book_id, 'title': title, 'fmt': fmt, 'path': path,
-                    'convert': False, 'out_path': None, 'recs': None}
+            item = {'book_id': book_id, 'title': title, 'author': author, 'fmt': fmt,
+                    'path': path, 'convert': False, 'out_path': None, 'recs': None}
             if fmt == 'PDF' and convert_pdf:
                 if tdir is None:
                     tdir = PersistentTemporaryDirectory('_send_to_kindle')
                 try:
                     item['recs'] = self.conversion_recommendations(db, book_id)
-                    item['out_path'] = self.conversion_output_path(tdir, new_api, book_id, title)
+                    item['out_path'] = self.conversion_output_path(tdir, book_id, title, authors)
                     item['convert'] = True
                 except Exception:
                     traceback.print_exc()
@@ -148,13 +159,11 @@ class SendToKindleAction(InterfaceAction):
             recs.append(('cover', cover_file.name, OptionRecommendation.HIGH))
         return recs
 
-    def conversion_output_path(self, tdir, new_api, book_id, title):
+    def conversion_output_path(self, tdir, book_id, title, authors):
         '''
-        Send to Kindle shows the file name on the device, so give the converted
-        EPUB a proper "Title - Author" name instead of a temporary one. Each book
-        gets its own directory so two books cannot collide.
+        Give the converted EPUB a proper "Title - Author" name instead of a temporary one.
+        Each book gets its own directory so two books cannot collide.
         '''
-        authors = new_api.field_for('authors', book_id) or ()
         name = title
         if authors:
             name = '{} - {}'.format(title, ' & '.join(authors))
@@ -199,8 +208,12 @@ class SendToKindleAction(InterfaceAction):
         return None
 
     # --- worker (background thread) -----------------------------------------
-    def run_batch(self, exe, items, opts, results, abort=None, log=None, notifications=None):
+    def run_batch(self, client, serials, items, opts, results,
+                  abort=None, log=None, notifications=None):
         from calibre.utils.ipc.simple_worker import WorkerError, fork_job
+
+        # Applies to every request this batch makes to Amazon
+        stkclient.api.TIMEOUT = opts['send_timeout']
 
         results = list(results)
         total = len(items) or 1
@@ -237,30 +250,33 @@ class SendToKindleAction(InterfaceAction):
             self.notify(notifications, (i + 0.5) / total, _('Sending {}').format(title))
             if log is not None:
                 log('Sending', path)
-            ok, error = self.send_file(exe, path, opts['timeout'])
+            ok, error = self.send_file(client, serials, item, path, log)
             results.append(self.result(item['book_id'], title, ok, error, epub_path))
         self.notify(notifications, 1, _('Finished'))
         return results
 
-    def send_file(self, exe, path, timeout):
+    def send_file(self, client, serials, item, path, log=None):
+        'Upload one file to Amazon and have it delivered. Returns (ok, error message).'
+        # Taken from the file actually being sent, so a converted PDF is reported as an EPUB
+        fmt = os.path.splitext(path)[1].lstrip('.').lower()
         try:
-            proc = subprocess.run(
-                [exe, path], capture_output=True, timeout=timeout,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        except subprocess.TimeoutExpired:
-            return False, _('The Send to Kindle application did not finish within {} seconds').format(timeout)
-        except FileNotFoundError:
-            return False, _('The Send to Kindle application was not found at: {}').format(exe)
-        except OSError as err:
-            return False, _('Could not run the Send to Kindle application: {}').format(err)
-
-        if proc.returncode == 0:
-            return True, ''
-        detail = decode_output(proc.stderr) or decode_output(proc.stdout)
-        msg = _('Exit code {}').format(proc.returncode)
-        if detail:
-            msg = '{}: {}'.format(msg, detail)
-        return False, msg
+            sku = client.send_file(Path(path), serials, author=item['author'],
+                                   title=item['title'], format=fmt)
+        except stkclient.APIError as err:
+            if log is not None:
+                log.error(traceback.format_exc())
+            return False, _('Amazon rejected the file: {}').format(err)
+        except urllib.error.URLError as err:
+            if log is not None:
+                log.error(traceback.format_exc())
+            return False, _('Could not reach Amazon: {}').format(getattr(err, 'reason', err))
+        except Exception as err:
+            if log is not None:
+                log.error(traceback.format_exc())
+            return False, _('Could not send the file: {}').format(err)
+        if log is not None and sku:
+            log('Amazon accepted', os.path.basename(path), 'as', sku)
+        return True, ''
 
     # --- completion (GUI thread) --------------------------------------------
     def batch_done(self, job):
@@ -320,17 +336,8 @@ class SendToKindleAction(InterfaceAction):
         if notifications is not None:
             notifications.put((frac, msg))
 
-    def report_missing_exe(self, configured):
-        checked = [configured] if configured else candidate_exe_paths()
-        msg = '<p>' + _(
-            'The Send to Kindle application could not be found, so nothing was sent.')
-        msg += '<p>' + _('Looked for it here:') + '<ul>{}</ul>'.format(
-            ''.join('<li>{}</li>'.format(prepare_string_for_xml(p)) for p in checked))
-        msg += '<p>' + _(
-            'Download and install it from <a href="{0}">{0}</a>, or set the path to it in '
-            'Preferences &rarr; Plugins &rarr; Send to Kindle &rarr; Customize.').format(DOWNLOAD_URL)
-        error_dialog(self.gui, _('Send to Kindle not found'), msg, show=True)
-        if question_dialog(self.gui, _('Set the path now?'),
-                           _('Do you want to open the plugin configuration and set the path '
-                             'to the Send to Kindle application?')):
+    def report_not_configured(self, msg):
+        error_dialog(self.gui, _('Send to Kindle is not set up'), msg, show=True)
+        if question_dialog(self.gui, _('Set it up now?'),
+                           _('Do you want to open the plugin configuration?')):
             self.show_configuration()

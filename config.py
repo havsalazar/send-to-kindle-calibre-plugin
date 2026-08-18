@@ -1,88 +1,79 @@
-import os
+import traceback
 
 from qt.core import (
+    QAbstractItemView,
     QCheckBox,
-    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    Qt,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from calibre.gui2 import error_dialog, question_dialog
 from calibre.utils.config import JSONConfig
 
-# Known install locations of the Amazon Send to Kindle desktop application,
-# tried in order when no explicit path has been configured.
-KNOWN_EXE_PATHS = (
-    r"C:\Program Files (x86)\Amazon\SendToKindle\StkSendToHandler.exe",
-    r"C:\Program Files\Amazon\SendToKindle\StkSendToHandler.exe",
-    os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Amazon', 'SendToKindle', 'StkSendToHandler.exe'),
-)
+from calibre_plugins.send_to_kindle import auth
 
-DOWNLOAD_URL = 'https://www.amazon.com/sendtokindle'
+# Formats the Send to Kindle service accepts. MOBI and AZW3 are deliberately absent, Amazon
+# stopped accepting them in 2022, so a book that only has those has to be converted first.
+SUPPORTED_FORMATS = frozenset(
+    'EPUB PDF DOCX DOC TXT RTF HTM HTML JPEG JPG PNG GIF BMP'.split())
 
 prefs = JSONConfig('plugins/send_to_kindle')
 
-prefs.defaults['exe_path'] = ''  # empty => autodetect
-prefs.defaults['format_priority'] = ['EPUB', 'MOBI', 'AZW3', 'PDF', 'DOCX', 'TXT']
+prefs.defaults['format_priority'] = ['EPUB', 'PDF', 'DOCX', 'TXT']
 prefs.defaults['convert_pdf'] = True
 prefs.defaults['convert_timeout'] = 900  # seconds per conversion
-prefs.defaults['timeout'] = 15  # seconds per send
+prefs.defaults['send_timeout'] = 300  # seconds, applied to each request to Amazon
+prefs.defaults['device_serials'] = []  # devices the books are sent to
+prefs.defaults['device_names'] = {}  # serial -> name, cached so this dialog opens offline
 prefs.defaults['track_status'] = True
 prefs.defaults['sent_column'] = 'stk_sent'
-
-
-def candidate_exe_paths():
-    'The paths autodetection looks at, in order, ignoring empty entries'
-    return [p for p in KNOWN_EXE_PATHS if p and os.path.basename(p)]
-
-
-def resolve_exe():
-    '''
-    Return the path of the Send to Kindle handler to use, or '' if none was found.
-
-    A configured path always wins, even if it does not exist -- the caller reports
-    that back to the user rather than silently falling back to another install.
-    '''
-    configured = (prefs['exe_path'] or '').strip()
-    if configured:
-        return configured
-    for path in candidate_exe_paths():
-        if os.path.isfile(path):
-            return path
-    return ''
 
 
 class ConfigWidget(QWidget):
 
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
+        self.client = auth.load_client()
         layout = QVBoxLayout(self)
 
-        # --- Send to Kindle application -------------------------------------
-        exe_box = QGroupBox(_('Send to Kindle application'), self)
-        exe_layout = QVBoxLayout(exe_box)
+        # --- Amazon account -------------------------------------------------
+        account_box = QGroupBox(_('Amazon account'), self)
+        account_layout = QVBoxLayout(account_box)
 
         row = QHBoxLayout()
-        self.exe_edit = QLineEdit(prefs['exe_path'] or '', self)
-        self.exe_edit.setPlaceholderText(_('Leave empty to detect the standard install automatically'))
-        self.exe_edit.textChanged.connect(self.update_exe_status)
-        browse = QPushButton(_('&Browse...'), self)
-        browse.clicked.connect(self.browse_for_exe)
-        row.addWidget(self.exe_edit)
-        row.addWidget(browse)
-        exe_layout.addLayout(row)
+        self.account_status = QLabel(self)
+        self.account_status.setWordWrap(True)
+        self.sign_in_button = QPushButton(_('&Sign in...'), self)
+        self.sign_in_button.clicked.connect(self.sign_in)
+        self.sign_out_button = QPushButton(_('Sign &out'), self)
+        self.sign_out_button.clicked.connect(self.sign_out)
+        row.addWidget(self.account_status, stretch=1)
+        row.addWidget(self.sign_in_button)
+        row.addWidget(self.sign_out_button)
+        account_layout.addLayout(row)
 
-        self.exe_status = QLabel(self)
-        self.exe_status.setOpenExternalLinks(True)
-        self.exe_status.setWordWrap(True)
-        exe_layout.addWidget(self.exe_status)
-        layout.addWidget(exe_box)
+        self.devices_list = QListWidget(self)
+        self.devices_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.devices_list.setToolTip(_('Books are sent to every device ticked here'))
+        account_layout.addWidget(self.devices_list)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel(_('Books are sent to every device ticked above.'), self), stretch=1)
+        self.refresh_button = QPushButton(_('&Refresh devices'), self)
+        self.refresh_button.clicked.connect(self.refresh_devices)
+        row.addWidget(self.refresh_button)
+        account_layout.addLayout(row)
+        layout.addWidget(account_box)
 
         # --- Formats --------------------------------------------------------
         fmt_box = QGroupBox(_('Formats'), self)
@@ -93,6 +84,13 @@ class ConfigWidget(QWidget):
             'Comma separated list of formats, most preferred first. The first format\n'
             'in this list that a book actually has is the one that gets sent.'))
         fmt_layout.addRow(_('&Preferred formats:'), self.formats_edit)
+
+        supported = QLabel(_(
+            'Amazon accepts {}. It no longer accepts MOBI or AZW3, so a book that only has '
+            'those has to be converted before it can be sent.').format(
+                ', '.join(sorted(SUPPORTED_FORMATS))), self)
+        supported.setWordWrap(True)
+        fmt_layout.addRow(supported)
 
         self.convert_pdf_box = QCheckBox(_('Convert PDF to EPUB before sending'), self)
         self.convert_pdf_box.setChecked(bool(prefs['convert_pdf']))
@@ -107,11 +105,13 @@ class ConfigWidget(QWidget):
         self.convert_timeout_box.setValue(int(prefs['convert_timeout']))
         fmt_layout.addRow(_('Conversion &timeout:'), self.convert_timeout_box)
 
-        self.timeout_box = QSpinBox(self)
-        self.timeout_box.setRange(5, 3600)
-        self.timeout_box.setSuffix(_(' seconds'))
-        self.timeout_box.setValue(int(prefs['timeout']))
-        fmt_layout.addRow(_('&Send timeout:'), self.timeout_box)
+        self.send_timeout_box = QSpinBox(self)
+        self.send_timeout_box.setRange(30, 3600)
+        self.send_timeout_box.setSuffix(_(' seconds'))
+        self.send_timeout_box.setValue(int(prefs['send_timeout']))
+        self.send_timeout_box.setToolTip(_(
+            'How long to wait for Amazon to respond. Large books take a while to upload.'))
+        fmt_layout.addRow(_('&Send timeout:'), self.send_timeout_box)
         layout.addWidget(fmt_box)
 
         # --- Status tracking ------------------------------------------------
@@ -128,60 +128,131 @@ class ConfigWidget(QWidget):
         track_layout.addRow(_('&Sent column:'), self.sent_column_edit)
 
         note = QLabel(_(
-            'The column is created for you the first time you send a book. '
-            'A "Yes" means the file was handed to the Send to Kindle application '
-            'without an error, not that Amazon has confirmed delivery.'), self)
+            'The column is created for you the first time you send a book. A "Yes" means '
+            'Amazon accepted the file for delivery.'), self)
         note.setWordWrap(True)
         track_layout.addRow(note)
         layout.addWidget(track_box)
 
         layout.addStretch()
 
-        self.update_exe_status()
+        self.populate_devices(prefs['device_names'], set(prefs['device_serials']))
+        self.update_account_status()
         self.update_track_status(self.track_status_box.isChecked())
 
-    # --- helpers ------------------------------------------------------------
-    def browse_for_exe(self):
-        path, _filter = QFileDialog.getOpenFileName(
-            self, _('Select StkSendToHandler.exe'), self.exe_edit.text() or '',
-            _('Programs') + ' (*.exe);;' + _('All files') + ' (*)')
-        if path:
-            self.exe_edit.setText(os.path.normpath(path))
-
-    def update_exe_status(self, *args):
-        configured = self.exe_edit.text().strip()
-        if configured:
-            if os.path.isfile(configured):
-                self.exe_status.setText(_('Found the Send to Kindle application.'))
-            else:
-                self.exe_status.setText(_(
-                    'No file at that path. Install the Send to Kindle application from '
-                    '<a href="{0}">{0}</a> or correct the path.').format(DOWNLOAD_URL))
-            return
-        detected = resolve_exe()
-        if detected:
-            self.exe_status.setText(_('Detected automatically at: {0}').format(detected))
+    # --- account ------------------------------------------------------------
+    def update_account_status(self):
+        signed_in = self.client is not None
+        if signed_in:
+            name = auth.account_name(self.client)
+            self.account_status.setText(
+                _('Signed in as {}.').format(name) if name else _('Signed in.'))
         else:
-            self.exe_status.setText(_(
-                'The Send to Kindle application was not found in any of its usual locations. '
-                'Download it from <a href="{0}">{0}</a> or set the path above.').format(DOWNLOAD_URL))
+            self.account_status.setText(_('Not signed in. Sign in to send books to your Kindle.'))
+        self.sign_in_button.setText(_('&Sign in...') if not signed_in else _('Sign in a&gain...'))
+        self.sign_out_button.setEnabled(signed_in)
+        self.refresh_button.setEnabled(signed_in)
+        self.devices_list.setEnabled(signed_in)
 
+    def sign_in(self):
+        d = auth.LoginDialog(self)
+        if d.exec() != d.DialogCode.Accepted:
+            return
+        self.client = d.client
+        self.update_account_status()
+        # A fresh account has no stored selection, so default to sending to everything
+        self.refresh_devices(select_all=not prefs['device_serials'])
+
+    def sign_out(self):
+        if not question_dialog(
+                self, _('Sign out?'),
+                _('calibre will no longer be able to send books to your Kindle until you sign '
+                  'in again. Amazon will also be asked to remove this calibre registration.')):
+            return
+        if self.client is not None:
+            try:
+                self.client.logout()
+            except Exception:
+                # Losing the local credentials is what matters, a failed call to Amazon here
+                # only leaves a stale registration behind
+                traceback.print_exc()
+        auth.delete_client()
+        self.client = None
+        self.devices_list.clear()
+        self.update_account_status()
+
+    def refresh_devices(self, checked=False, select_all=False):
+        if self.client is None:
+            return
+        try:
+            with auth.busy_cursor():
+                devices = self.client.get_owned_devices()
+        except Exception as err:
+            traceback.print_exc()
+            return error_dialog(
+                self, _('Could not list your devices'),
+                _('Amazon did not return your devices: {}\n\nIf you were signed out, sign in '
+                  'again.').format(auth.describe_error(err)),
+                det_msg=traceback.format_exc(), show=True)
+
+        names = {d.device_serial_number: d.device_name for d in devices}
+        selected = set(names) if select_all else self.selected_serials()
+        self.populate_devices(names, selected)
+        if not devices:
+            info = _('Amazon reports no devices on this account. Open the Kindle app or your '
+                     'Kindle at least once, then refresh.')
+            error_dialog(self, _('No devices found'), info, show=True)
+
+    def populate_devices(self, names, selected):
+        self.devices_list.clear()
+        for serial, name in sorted(names.items(), key=lambda kv: (kv[1] or '').lower()):
+            item = QListWidgetItem(name or serial, self.devices_list)
+            item.setData(Qt.ItemDataRole.UserRole, serial)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.CheckState.Checked if serial in selected else Qt.CheckState.Unchecked)
+            item.setToolTip(serial)
+
+    def selected_serials(self):
+        out = []
+        for row in range(self.devices_list.count()):
+            item = self.devices_list.item(row)
+            if item.checkState() == Qt.CheckState.Checked:
+                out.append(item.data(Qt.ItemDataRole.UserRole))
+        return out
+
+    def device_names(self):
+        return {self.devices_list.item(row).data(Qt.ItemDataRole.UserRole):
+                self.devices_list.item(row).text()
+                for row in range(self.devices_list.count())}
+
+    # --- helpers ------------------------------------------------------------
     def update_track_status(self, checked):
         self.sent_column_edit.setEnabled(checked)
 
     def validate(self):
+        if self.client is None:
+            error_dialog(self, _('Not signed in'),
+                         _('Sign in to your Amazon account before sending books.'), show=True)
+            return False
+        if not self.selected_serials():
+            error_dialog(self, _('No device selected'),
+                         _('Tick at least one device to send books to. Click "Refresh devices" '
+                           'if the list is empty.'), show=True)
+            return False
         return True
 
     def save_settings(self):
-        prefs['exe_path'] = self.exe_edit.text().strip()
-
         formats = [f.strip().upper().lstrip('.') for f in self.formats_edit.text().split(',')]
         formats = [f for f in formats if f]
         prefs['format_priority'] = formats or list(prefs.defaults['format_priority'])
 
         prefs['convert_pdf'] = self.convert_pdf_box.isChecked()
         prefs['convert_timeout'] = self.convert_timeout_box.value()
-        prefs['timeout'] = self.timeout_box.value()
+        prefs['send_timeout'] = self.send_timeout_box.value()
+
+        prefs['device_serials'] = self.selected_serials()
+        prefs['device_names'] = self.device_names()
 
         prefs['track_status'] = self.track_status_box.isChecked()
         sent = self.sent_column_edit.text().strip().lstrip('#').lower()

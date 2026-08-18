@@ -2,11 +2,13 @@ from calibre.customize import InterfaceActionBase
 
 class SendToKindlePlugin(InterfaceActionBase):
     name                = 'Send to Kindle'
-    description         = 'Send the selected books to Kindle via StkSendToHandler.exe'
-    supported_platforms = ['windows']
+    description         = ("Send the selected books to your Kindle devices over Amazon's "
+                           'Send to Kindle service, without the desktop application')
+    supported_platforms = ['windows', 'osx', 'linux']
     author              = 'havsalazar'
-    version             = (1, 1, 1)
-    minimum_calibre_version = (5, 0, 0)
+    version             = (2, 0, 0)
+    # qt.core, which every module here imports, only exists from calibre 6
+    minimum_calibre_version = (6, 0, 0)
 
     actual_plugin = 'calibre_plugins.send_to_kindle.action:SendToKindleAction'
 

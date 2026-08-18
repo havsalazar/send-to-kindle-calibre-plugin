@@ -2,25 +2,25 @@
      width="1200" height="360" viewBox="0 0 1200 360"
      role="img" aria-labelledby="hero-title hero-desc">
   <title id="hero-title">Send to Kindle — calibre plugin</title>
-  <desc id="hero-desc">A calibre plugin for Windows that sends selected books to the Amazon Send to Kindle application, converts PDFs to EPUB first, and records the outcome in library columns. Beside the title, a small library view shows three books with their send status: two marked Yes, one marked No because it has no supported format.</desc>
+  <desc id="hero-desc">A cross-platform calibre plugin that sends selected books straight to your Kindle devices over your Amazon account, converts PDFs to EPUB first, and records the outcome in library columns. Beside the title, a small library view shows three books with their send status: two marked Yes, one marked No because it has no supported format.</desc>
 
   <rect width="1200" height="360" rx="26" fill="#14161A"/>
   <rect x="0" y="0" width="1200" height="4" rx="2" fill="#F4A63A" opacity="0.55"/>
 
   <g id="title-block">
     <text x="64" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-          font-size="17" letter-spacing="2" fill="#F4A63A">CALIBRE PLUGIN · WINDOWS</text>
+          font-size="17" letter-spacing="2" fill="#F4A63A">CALIBRE PLUGIN · NO DESKTOP APP</text>
 
     <text x="64" y="162" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
           font-size="58" font-weight="700" fill="#F4F6F8">Send to Kindle</text>
 
     <text x="64" y="212" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-          font-size="22" fill="#B7BFC8">Select books in calibre, send them to Amazon&#8217;s</text>
+          font-size="22" fill="#B7BFC8">Select books in calibre, send them straight to your</text>
     <text x="64" y="244" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-          font-size="22" fill="#B7BFC8">Send to Kindle app, and record every result.</text>
+          font-size="22" fill="#B7BFC8">Kindle devices over Amazon, and record every result.</text>
 
     <text x="64" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-          font-size="18" fill="#7B8590">calibre 5.0+   ·   StkSendToHandler.exe</text>
+          font-size="18" fill="#7B8590">calibre 6.0+   ·   Windows, macOS, Linux</text>
   </g>
 
   <g id="library-proof">
