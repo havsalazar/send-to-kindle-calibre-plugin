@@ -1,0 +1,62 @@
+# Ruff configuration for a calibre plugin.
+#
+# Nothing here is shipped: ruff.toml is not in build.sh's FILES list, so it stays out of
+# send_to_kindle.zip.
+
+# Vendored third party code. It is kept as close to upstream as possible so it can be
+# re-synced later; the deliberate patches are listed in the README. Linting it would mean
+# reformatting someone else's code and making every future diff against upstream noisy.
+exclude = ["stkclient"]
+
+# calibre installs these into builtins before it imports a plugin module, so they are
+# defined at runtime even though nothing imports them. Without this, every translated
+# string in the plugin is reported as an undefined name.
+builtins = ["_", "ngettext"]
+
+# A conservative floor rather than a claim about what any particular calibre bundles.
+# None of the plugin's own code depends on newer syntax.
+target-version = "py38"
+line-length = 110
+
+[lint]
+# calibre marks intentionally unused unpacked values with an unused_ prefix rather than a
+# leading underscore, and this codebase follows it.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?)|unused_[a-zA-Z0-9_]*)$"
+
+ignore = [
+    # The repository directory is the project name. calibre does not import it by that
+    # name anyway: the plugin is loaded as calibre_plugins.send_to_kindle, which comes
+    # from plugin-import-name-send_to_kindle.txt.
+    "N999",
+
+    # Every one of these is a deliberate boundary in GUI or background-job code, and each
+    # logs the traceback before degrading. An exception escaping a plugin is a far worse
+    # outcome for the user than a swallowed one: it can take down a calibre job or leave
+    # the sign-in dialog wedged. Narrow the catches, not this ignore, if you disagree.
+    "BLE001",
+
+    # supported_platforms and friends are calibre's declared plugin API, read off the
+    # class by calibre itself. They are not ClassVar-annotated anywhere in calibre.
+    "RUF012",
+]
+
+[lint.isort]
+# Preserve the grouping the code already uses, which is calibre's own convention:
+#   standard library / Qt / calibre framework / this plugin
+# Ruff's default treats all three of the last as one third-party block and sorts qt.core
+# to the bottom, which reads much worse.
+known-first-party = ["calibre_plugins"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "calibre",
+    "first-party",
+    "local-folder",
+]
+
+[lint.isort.sections]
+calibre = ["calibre"]
+
+[lint.pycodestyle]
+max-line-length = 110

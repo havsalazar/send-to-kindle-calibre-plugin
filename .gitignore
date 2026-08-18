@@ -1,2 +1,3 @@
 send_to_kindle.zip
 __pycache__/
+.ruff_cache/

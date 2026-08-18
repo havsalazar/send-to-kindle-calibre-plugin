@@ -1,5 +1,6 @@
 from calibre.customize import InterfaceActionBase
 
+
 class SendToKindlePlugin(InterfaceActionBase):
     name                = 'Send to Kindle'
     description         = ("Send the selected books to your Kindle devices over Amazon's "

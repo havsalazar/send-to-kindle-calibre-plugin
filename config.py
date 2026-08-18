@@ -10,9 +10,9 @@ from qt.core import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    Qt,
     QPushButton,
     QSpinBox,
+    Qt,
     QVBoxLayout,
     QWidget,
 )
@@ -25,7 +25,7 @@ from calibre_plugins.send_to_kindle import auth
 # Formats the Send to Kindle service accepts. MOBI and AZW3 are deliberately absent, Amazon
 # stopped accepting them in 2022, so a book that only has those has to be converted first.
 SUPPORTED_FORMATS = frozenset(
-    'EPUB PDF DOCX DOC TXT RTF HTM HTML JPEG JPG PNG GIF BMP'.split())
+    ['EPUB', 'PDF', 'DOCX', 'DOC', 'TXT', 'RTF', 'HTM', 'HTML', 'JPEG', 'JPG', 'PNG', 'GIF', 'BMP'])
 
 prefs = JSONConfig('plugins/send_to_kindle')
 

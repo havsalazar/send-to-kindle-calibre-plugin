@@ -298,7 +298,7 @@ class SendToKindleAction(InterfaceAction):
                                    replace=False, run_hooks=False)
             except Exception:
                 traceback.print_exc()
-                job.log.error('Failed to add the converted EPUB for', r['title'])
+                job.log.error('Failed to add the converted EPUB for {}'.format(r['title']))
 
         sent_column = getattr(job, 'stk_column', None)
         if sent_column:
