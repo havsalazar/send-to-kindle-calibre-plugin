@@ -45,7 +45,7 @@ jobs:
 
       - name: Check Python syntax
         if: steps.check.outputs.needed == 'true'
-        run: python3 -m compileall -q __init__.py config.py action.py
+        run: python3 -m compileall -q __init__.py config.py action.py auth.py stkclient
 
       - name: Build
         if: steps.check.outputs.needed == 'true'
